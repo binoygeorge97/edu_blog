@@ -1,0 +1,44 @@
+import app.telemetry  # noqa: F401 — must be first; triggers Phoenix register() before any anthropic client init
+
+from opentelemetry import trace
+
+from app.agents.generator import generate
+from app.agents.teacher import teach
+from app.models import AgentComment, PipelineResult
+
+_tracer = trace.get_tracer("sourcerer.pipeline")
+
+
+async def run_pipeline(question: str) -> PipelineResult:
+    with _tracer.start_as_current_span("pipeline.run") as span:
+        span.set_attribute("question", question[:200])
+
+        draft = await generate(question)
+        span.set_attribute("draft.length", len(draft))
+
+        answer = await teach(draft, question)
+        span.set_attribute("answer.length", len(answer))
+
+    return PipelineResult(
+        answer=answer,
+        comments=[
+            AgentComment(
+                agent="generator",
+                role="Generator",
+                content=draft,
+            )
+        ],
+        confidence=1.0,
+        confidence_level="high",
+    )
+
+
+async def reply_to_comment(comment: AgentComment, followup: str) -> PipelineResult:
+    context_question = (
+        f"{followup}\n\n"
+        f"[Context: This is a follow-up to a comment by {comment.role}. "
+        f"Their perspective: {comment.content[:500]}"
+        + (f" They were discussing the claim: '{comment.claim}'" if comment.claim else "")
+        + "]"
+    )
+    return await run_pipeline(context_question)
