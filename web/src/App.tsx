@@ -73,11 +73,11 @@ function personaColor(role: string): string {
 /** Maps agent role keywords → avatar image path in /avatars/. */
 function personaAvatar(agent: string, role: string): string {
   const r = role.toLowerCase();
-  if (agent === "verifier" || r.includes("verif")) return "/avatars/verifier.svg";
-  if (r.includes("fact") || r.includes("skeptic")) return "/avatars/skeptic.svg";
-  if (r.includes("domain") || r.includes("expert")) return "/avatars/expert.svg";
-  if (r.includes("devil") || r.includes("advocate")) return "/avatars/advocate.svg";
-  return "/avatars/generator.svg";
+  if (agent === "verifier" || r.includes("verif")) return "/avatars/verifier.png";
+  if (r.includes("fact") || r.includes("skeptic")) return "/avatars/skeptic.png";
+  if (r.includes("domain") || r.includes("expert")) return "/avatars/expert.png";
+  if (r.includes("devil") || r.includes("advocate")) return "/avatars/advocate.png";
+  return "/avatars/generator.png";
 }
 
 function TypingDots() {
@@ -369,6 +369,9 @@ function AgentCard({
   const [sending, setSending] = useState(false);
   const [pendingQ, setPendingQ] = useState<string | null>(null);
   const [thread, setThread] = useState<{ q: string; a: string }[]>([]);
+  const [repliesHidden, setRepliesHidden] = useState(false);
+
+  const COLLAPSE_THRESHOLD = 2;
 
   return (
     <div
@@ -468,7 +471,17 @@ function AgentCard({
 
       {(thread.length > 0 || sending) && (
         <div className="mt-3 space-y-3">
-          {thread.map((ex, i) => (
+          {thread.length >= COLLAPSE_THRESHOLD && (
+            <button
+              onClick={() => setRepliesHidden((h) => !h)}
+              className="text-xs text-gold-dim hover:text-gold transition"
+            >
+              {repliesHidden
+                ? `Show ${thread.length} replies`
+                : `Hide replies`}
+            </button>
+          )}
+          {!repliesHidden && thread.map((ex, i) => (
             <div key={i} className="space-y-1.5">
               <div className="ml-auto w-fit max-w-[90%] rounded-lg bg-gold/20 border border-gold/30 px-3 py-2 text-[13px] leading-[1.5] text-foreground">
                 {ex.q}
@@ -518,7 +531,7 @@ function WorkspaceView({
         </button>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-[7fr_3fr]">
+      <div className="space-y-8">
         {/* Article */}
         <article className="card-magical p-6">
           <h1
@@ -534,12 +547,12 @@ function WorkspaceView({
           </div>
         </article>
 
-        {/* Sidebar */}
-        <aside className="lg:sticky lg:top-20 lg:self-start">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gold-dim font-serif">
+        {/* Reviewer Comments */}
+        <section>
+          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gold-dim font-serif">
             AI Review · {result.comments.length}
           </h2>
-          <div className="space-y-3">
+          <div className="space-y-3 max-w-3xl">
             {result.comments.length === 0 && (
               <p className="card-magical p-4 text-sm text-muted">
                 No claims were flagged — the reviewers found nothing to contest.
@@ -549,7 +562,7 @@ function WorkspaceView({
               <AgentCard key={i} comment={c} onReply={(f) => onReply(c, f)} />
             ))}
           </div>
-        </aside>
+        </section>
       </div>
     </div>
   );
