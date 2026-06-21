@@ -37,7 +37,9 @@ export interface BlogPostResult {
   confidence_level: ConfidenceLevel;
 }
 
-const API = "/api"; // proxied to the FastAPI backend by Vite (see vite.config.ts)
+// In dev, Vite proxies /api/* → localhost:8000 (see vite.config.ts).
+// In production, set VITE_API_URL to the deployed backend (e.g. https://sourcerer-api.onrender.com).
+const API = (import.meta.env.VITE_API_URL ?? "/api").replace(/\/$/, "");
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${API}${path}`, {
