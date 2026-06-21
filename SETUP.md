@@ -1,12 +1,10 @@
-# Setup & Operations Guide
+# Setup & Test Guide
 
-Step-by-step actions for every phase of the build. Do these in order; each section gates the next.
+Everything needed to get the current build running from scratch. Phases 0–4 are implemented; follow these steps in order.
 
 ---
 
-## Phase 0 — Initial setup (do this first)
-
-### 1. Python environment
+## Step 1 — Python environment
 
 ```bash
 python3 --version          # must be 3.11+
@@ -15,161 +13,158 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Create your `.env` file
+---
 
-```bash
-cp .env.example .env
-```
-
-Then open `.env` and fill in the values below.
-
-### 3. Anthropic API key
+## Step 2 — API key and spend cap
 
 1. Go to [console.anthropic.com](https://console.anthropic.com) → **API Keys** → create a key.
-2. Paste it into `.env`:
+2. **Set a hard spend cap first:** Console → **Billing** → **Spend Limit** → set to $20.
+3. Create your `.env` file:
+   ```bash
+   cp .env.example .env
+   ```
+4. Open `.env` and set:
    ```
    ANTHROPIC_API_KEY=sk-ant-...
    ```
-3. **Set a hard spend cap** — Console → **Billing** → **Spend Limit** → set to $20. Do this before any code runs.
-
-### 4. Verify the app boots
-
-Start Phoenix (observability dashboard) in one terminal:
-```bash
-python -c "import phoenix as px; px.launch_app()"
-```
-Phoenix UI will be at http://localhost:6006.
-
-Start the FastAPI backend in a second terminal:
-```bash
-source .venv/bin/activate
-uvicorn app.api:app --reload --port 8000
-```
-Check http://localhost:8000/health → should return `{"status": "ok"}`.
-
-Start the Streamlit frontend in a third terminal:
-```bash
-source .venv/bin/activate
-streamlit run ui/streamlit_app.py
-```
-UI will open at http://localhost:8501. Ask a question — you should get an answer.
+   The other variables can stay blank for now — the pipeline runs without Browserbase (the verifier just returns nothing and the pipeline continues).
 
 ---
 
-## Phase 2 — Browserbase + Stagehand (verifier)
+## Step 3 — Run the app
 
-You need Browserbase credentials before building or running the verifier agent.
+You need **three terminals**, all with the venv active (`source .venv/bin/activate`).
 
-### 1. Get Browserbase credentials
+**Terminal 1 — Phoenix (observability dashboard):**
+```bash
+python3 -c "import phoenix as px; px.launch_app()"
+```
+Open http://localhost:6006 — you'll see traces appear here as you use the app.
 
-1. Sign up at [browserbase.com](https://browserbase.com) (free tier available; grab any hackathon sponsor credits first).
-2. In the Browserbase dashboard:
-   - Copy your **API Key**
-   - Copy your **Project ID**
-3. Add them to `.env`:
+**Terminal 2 — API backend:**
+```bash
+uvicorn app.api:app --reload --port 8000
+```
+Confirm it's running: http://localhost:8000/health → `{"status": "ok"}`
+
+**Terminal 3 — Streamlit UI:**
+```bash
+streamlit run ui/streamlit_app.py
+```
+Opens at http://localhost:8501.
+
+---
+
+## Step 4 — Test the pipeline
+
+In the Streamlit UI, ask a factual question, for example:
+
+> What is the capital of Australia?
+
+You should get back an answer. In the terminal running the API you'll see log output from each pipeline stage. In Phoenix (http://localhost:6006) you'll see a `pipeline.run` trace with span attributes for draft length, critic count, verifier count, answer length, and confidence score.
+
+**What the pipeline does behind the scenes:**
+1. Generator (Sonnet) drafts an answer
+2. Critics (Haiku, parallel) decompose it into claims and red-team each one
+3. Verifier checks flagged claims via Browserbase — **skipped if credentials are absent**, which is fine
+4. Teacher (Sonnet) synthesizes the final answer using critic feedback
+5. Confidence is computed via multi-sample Haiku calls on contested claims
+
+The answer and a `confidence` / `confidence_level` value are returned.
+
+---
+
+## Step 5 — Run the eval harness smoke test
+
+This is a standalone script — no need for the API or Streamlit to be running.
+
+**Generate answers for the 5-question smoke set:**
+```bash
+python3 eval/generate.py --dataset smoke --mode both
+```
+
+- Baseline uses the Anthropic Batch API (submitted as one batch, polls every 30s until done — typically 1–3 minutes for 5 questions)
+- Pipeline runs `run_pipeline()` sequentially for each question (takes a few minutes)
+- Output: `eval/datasets/results_smoke_baseline.jsonl` and `results_smoke_pipeline.jsonl`
+
+**Score and compare:**
+```bash
+python3 eval/experiment.py --dataset smoke
+```
+
+You'll see a table like:
+```
+────────────────────────────────────────────────────────
+  Eval results — smoke set (5 questions)
+────────────────────────────────────────────────────────
+                        Baseline    Pipeline
+  ────────────────────  ──────────  ──────────
+  Correct                        3           4
+  Partial                        1           1
+  Incorrect                      1           0
+  ────────────────────  ──────────  ──────────
+  Accuracy                      70%         90%
+  Avg confidence                  —        0.81
+────────────────────────────────────────────────────────
+  Delta: +20pp
+────────────────────────────────────────────────────────
+```
+Per-question verdicts saved to `eval/datasets/results_smoke_scored.jsonl`.
+
+> **Cost:** generating the smoke set costs roughly $0.05–0.15 total. Re-running `experiment.py` to re-score is free (no regeneration). The results files are not committed to git, so re-running `generate.py` again would cost again — avoid this unless the pipeline code has changed.
+
+---
+
+## Optional — Add Browserbase (verifier web grounding)
+
+Without Browserbase the pipeline works fine — critics flag suspicious claims but the verifier stage is skipped. To enable web evidence lookup:
+
+1. Sign up at [browserbase.com](https://browserbase.com) and grab your API key and project ID from the dashboard.
+2. Add to `.env`:
    ```
    BROWSERBASE_API_KEY=bb_live_...
    BROWSERBASE_PROJECT_ID=prj_...
-   MODEL_API_KEY=sk-ant-...    # same value as ANTHROPIC_API_KEY — Stagehand uses this for its own reasoning
+   MODEL_API_KEY=sk-ant-...    # same value as ANTHROPIC_API_KEY
    ```
-
-### 2. Smoke-test Browserbase
-
-```bash
-python - <<'EOF'
-import asyncio
-from stagehand import Stagehand, StagehandConfig
-
-async def test():
-    cfg = StagehandConfig(env="BROWSERBASE", browserbase_api_key="<your key>", browserbase_project_id="<your project id>")
-    async with Stagehand(cfg) as s:
-        await s.page.goto("https://example.com")
-        print("Browserbase OK — title:", await s.page.title())
-
-asyncio.run(test())
-EOF
-```
+3. Restart the API server. The verifier will now run for flagged claims (up to 3 per question).
 
 ---
 
-## Phase 3 — Confidence scoring
+## What's built / what's not yet
 
-No new credentials needed. Just code changes (`app/confidence.py`). Re-run the app and verify confidence values are no longer hard-coded to 1.0.
-
----
-
-## Phase 4 — Eval harness
-
-No new credentials. Uses the existing `ANTHROPIC_API_KEY`.
-
-> **Cost control:** generate eval answers once using the Batch API (50% off), store results, then re-run judges over stored answers as many times as needed without regenerating.
-
-Run the smoke set (5 questions) first to confirm the harness works before touching the full 30-question set.
-
----
-
-## Phase 5 — UI polish
-
-No new credentials. Start the app the same way as Phase 0 and verify the blog-post + comment-thread rendering.
-
----
-
-## Phase 6 — Fetch.ai (optional, 2–3h time-box)
-
-### 1. Get Agentverse credentials
-
-1. Sign up at [agentverse.ai](https://agentverse.ai).
-2. Go to **API Keys** and create a key for Mailbox agent registration.
-3. Add to `.env`:
-   ```
-   AGENT_SEED=some random phrase that stays constant across restarts
-   AGENTVERSE_API_KEY=av1_...
-   ```
-
-### 2. Get testnet FET (if needed)
-
-If Agentverse requires funding: use the testnet faucet linked in the [Fetch.ai Innovation Lab](https://innovationlab.fetch.ai) docs. No real money needed for the hackathon.
-
-### 3. Run the Fetch.ai agent
-
-```bash
-source .venv/bin/activate
-python app/agent.py
-```
-
-This starts a **Mailbox agent** (not a Hosted agent — full deps available). The agent will print its address; register it on Agentverse to make it discoverable via ASI:One.
-
-### 4. Verify the round-trip
-
-Go to [ASI:One](https://asi1.ai), find the registered agent by name or address, and send a question. Confirm the pipeline runs and the answer comes back.
-
----
-
-## Running the full stack
-
-All four processes at once (four terminals):
-
-| Terminal | Command |
+| Component | Status |
 |---|---|
-| 1 — Phoenix | `python -c "import phoenix as px; px.launch_app()"` |
-| 2 — API | `uvicorn app.api:app --reload --port 8000` |
-| 3 — UI | `streamlit run ui/streamlit_app.py` |
-| 4 — Fetch agent (Phase 6 only) | `python app/agent.py` |
+| Generator → Critics → Verifier → Teacher pipeline | ✅ Running |
+| Confidence scoring (multi-sample Haiku) | ✅ Running |
+| FastAPI backend (POST /ask, POST /reply) | ✅ Running |
+| Phoenix OTEL tracing | ✅ Running |
+| Streamlit UI | ✅ Running (minimal — shows answer only) |
+| Eval harness (generate + experiment scripts) | ✅ Ready to run |
+| Blog-post + comment thread UI | ⏳ Phase 5 |
+| Fetch.ai uAgent wrapper | ⏳ Phase 6 |
 
-Dashboards:
-- Phoenix traces: http://localhost:6006
-- API health: http://localhost:8000/health
-- Streamlit UI: http://localhost:8501
+---
+
+## Quick reference — URLs and commands
+
+| What | Where / command |
+|---|---|
+| Streamlit UI | http://localhost:8501 |
+| API health | http://localhost:8000/health |
+| Phoenix traces | http://localhost:6006 |
+| Generate smoke answers | `python3 eval/generate.py --dataset smoke --mode both` |
+| Score smoke answers | `python3 eval/experiment.py --dataset smoke` |
+| Regenerate (if pipeline changed) | add `--force` to generate.py |
 
 ---
 
 ## Environment variable reference
 
-| Variable | Required from | Where to get it |
+| Variable | Required for | Where to get it |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | Phase 0 | [console.anthropic.com](https://console.anthropic.com) → API Keys |
-| `BROWSERBASE_API_KEY` | Phase 2 | [browserbase.com](https://browserbase.com) → Dashboard |
-| `BROWSERBASE_PROJECT_ID` | Phase 2 | Browserbase Dashboard → Projects |
-| `MODEL_API_KEY` | Phase 2 | Same value as `ANTHROPIC_API_KEY` |
-| `AGENT_SEED` | Phase 6 | Any stable passphrase you choose |
-| `AGENTVERSE_API_KEY` | Phase 6 | [agentverse.ai](https://agentverse.ai) → API Keys |
+| `ANTHROPIC_API_KEY` | Everything | [console.anthropic.com](https://console.anthropic.com) → API Keys |
+| `BROWSERBASE_API_KEY` | Verifier (optional) | [browserbase.com](https://browserbase.com) → Dashboard |
+| `BROWSERBASE_PROJECT_ID` | Verifier (optional) | Browserbase Dashboard → Projects |
+| `MODEL_API_KEY` | Verifier (optional) | Same value as `ANTHROPIC_API_KEY` |
+| `AGENT_SEED` | Phase 6 only | Any stable passphrase you choose |
+| `AGENTVERSE_API_KEY` | Phase 6 only | [agentverse.ai](https://agentverse.ai) → API Keys |
