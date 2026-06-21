@@ -7,11 +7,21 @@ _MAX_CLAIMS = 3  # cap per CLAUDE.md to control browser-hour spend
 
 
 async def verify(critic_comments: list[AgentComment]) -> list[AgentComment]:
-    """Fetch web evidence for claims flagged as refuted or unclear by critics."""
+    """Fetch web evidence for claims flagged as refuted or unclear by critics.
+
+    Always verifies at least one claim so Browserbase runs on every pipeline
+    call — guarantees a citation even when all critics agree.
+    """
     flagged = [
         c for c in critic_comments
         if c.claim and c.verdict in ("refutes", "unclear")
     ][:_MAX_CLAIMS]
+
+    if not flagged:
+        # Fall back to the first supported claim so we always hit Browserbase.
+        supported = [c for c in critic_comments if c.claim and c.verdict == "supports"]
+        if supported:
+            flagged = supported[:1]
 
     if not flagged:
         return []
