@@ -104,7 +104,7 @@ function personaColor(role: string): string {
 /** Maps agent role keywords → avatar image path in /avatars/. */
 function personaAvatar(agent: string, role: string): string {
   const r = role.toLowerCase();
-  if (agent === "verifier" || r.includes("verif")) return "/avatars/verifier.png";
+  if (agent === "verifier" || r.includes("verif")) return "/avatars/verifier.svg";
   if (r.includes("fact") || r.includes("skeptic")) return "/avatars/skeptic.png";
   if (r.includes("domain") || r.includes("expert")) return "/avatars/expert.png";
   if (r.includes("devil") || r.includes("advocate")) return "/avatars/advocate.png";
