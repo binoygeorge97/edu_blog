@@ -13,6 +13,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+You also need **Node.js 18+** (for the React frontend in `web/`): `node --version`.
+
 ---
 
 ## Step 2 — API key and spend cap
@@ -47,30 +49,35 @@ uvicorn app.api:app --reload --port 8000
 ```
 Confirm it's running: http://localhost:8000/health → `{"status": "ok"}`
 
-**Terminal 3 — Streamlit UI:**
+**Terminal 3 — React frontend (primary UI):**
 ```bash
-streamlit run ui/streamlit_app.py
+cd web
+npm install        # first time only
+npm run dev
 ```
-Opens at http://localhost:8501.
+Opens at http://localhost:5173. It proxies `/api/*` to the backend on :8000, so Terminal 2 must be running.
+
+> Minimal fallback UI (optional): `streamlit run ui/streamlit_app.py` → http://localhost:8501.
 
 ---
 
-## Step 4 — Test the pipeline
+## Step 4 — Test the two-phase flow
 
-In the Streamlit UI, ask a factual question, for example:
+In the React UI (http://localhost:5173):
 
-> What is the capital of Australia?
+1. On the home screen, ask a question, e.g. **"What is the capital of Australia?"** → you enter the **chat** phase.
+2. Chat with the tutor. **No fact-checking runs here** — in Phoenix you'll see only `tutor.chat` spans.
+3. Click **"Convert to Verifiable Blog Post"** → the **review** runs and you land in the workspace.
+4. The post appears with **color-coded paragraphs** (mint = verified, amber = disputed, rose = hallucination) and a sidebar of AI reviewer cards. Reply to a card to ask that agent a follow-up.
 
-You should get back an answer. In the terminal running the API you'll see log output from each pipeline stage. In Phoenix (http://localhost:6006) you'll see a `pipeline.run` trace with span attributes for draft length, critic count, verifier count, answer length, and confidence score.
-
-**What the pipeline does behind the scenes:**
-1. Generator (Sonnet) drafts an answer
-2. Critics (Haiku, parallel) decompose it into claims and red-team each one
+**What happens on "Convert":** in Phoenix (http://localhost:6006) you'll see a `blogpost.convert` trace with span attributes for paragraph count, critic count, verifier count, and confidence:
+1. Blogger (Sonnet) turns the conversation into structured paragraphs
+2. Critics (Haiku, parallel) decompose claims **anchored to each paragraph** and red-team them
 3. Verifier checks flagged claims via Browserbase — **skipped if credentials are absent**, which is fine
-4. Teacher (Sonnet) synthesizes the final answer using critic feedback
-5. Confidence is computed via multi-sample Haiku calls on contested claims
+4. Confidence is computed via multi-sample Haiku calls on contested claims
+5. Each paragraph's trust status is derived from its comments' verdicts
 
-The answer and a `confidence` / `confidence_level` value are returned.
+> The standalone `python scripts/smoke_flow.py` exercises the same chat → convert → reply flow from the terminal (no UI needed).
 
 ---
 
@@ -134,13 +141,14 @@ Without Browserbase the pipeline works fine — critics flag suspicious claims b
 
 | Component | Status |
 |---|---|
-| Generator → Critics → Verifier → Teacher pipeline | ✅ Running |
+| Tutoring chat (no checking) + convert-to-blog-post review | ✅ Running |
+| Generator → Critics → Verifier → Teacher pipeline (eval path) | ✅ Running |
 | Confidence scoring (multi-sample Haiku) | ✅ Running |
-| FastAPI backend (POST /ask, POST /reply) | ✅ Running |
+| FastAPI backend (POST /chat, /convert, /ask, /reply) | ✅ Running |
 | Phoenix OTEL tracing | ✅ Running |
-| Streamlit UI | ✅ Running (minimal — shows answer only) |
+| React SPA (primary UI — blog post + comment thread, reply boxes) | ✅ Running (`web/`) |
+| Streamlit UI | ✅ Running (minimal fallback) |
 | Eval harness (generate + experiment scripts) | ✅ Ready to run |
-| Blog-post + comment thread UI | ⏳ Phase 5 |
 | Fetch.ai uAgent wrapper | ✅ Running |
 
 ---
@@ -186,9 +194,11 @@ The Sourcerer pipeline can also run as a Fetch.ai Chat Protocol agent, discovera
 
 | What | Where / command |
 |---|---|
-| Streamlit UI | http://localhost:8501 |
+| React UI (primary) | http://localhost:5173 (`cd web && npm run dev`) |
+| Streamlit UI (fallback) | http://localhost:8501 |
 | API health | http://localhost:8000/health |
 | Phoenix traces | http://localhost:6006 |
+| Terminal smoke test of the flow | `python scripts/smoke_flow.py` |
 | Generate smoke answers | `python3 eval/generate.py --dataset smoke --mode both` |
 | Score smoke answers | `python3 eval/experiment.py --dataset smoke` |
 | Regenerate (if pipeline changed) | add `--force` to generate.py |

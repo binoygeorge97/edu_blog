@@ -91,7 +91,8 @@ perspective, and can later re-convert the enriched conversation into an updated 
 | `app/grounding/browser.py` | ✅ Done | Browserbase client helpers |
 | `app/confidence.py` | ✅ Done | Multi-sample semantic-disagreement scoring |
 | `eval/` | ✅ Done | datasets (qa_30, qa_smoke), generate.py (Batch API), experiment.py |
-| `ui/streamlit_app.py` | ✅ Done | Two-phase: chat thread + "Convert to verifiable blog post" → reviewed post |
+| `web/` (React SPA) | ✅ Done | **Primary UI** — Vite+React+Tailwind v4, 4-state Gemini-style flow, color-coded paragraphs + reviewer sidebar, calls /chat /convert /reply |
+| `ui/streamlit_app.py` | ✅ Done | Minimal fallback UI — chat thread + convert → reviewed post |
 | `app/agent.py` | ✅ Done | Fetch.ai uAgent Chat Protocol wrapper (returns result.answer) |
 
 **Currently on:** Phase 6 complete. All phases done.
@@ -114,26 +115,46 @@ class AgentComment(BaseModel):
     claim: str | None    # the specific claim this comment is about (critics + verifier)
     verdict: Literal["supports", "refutes", "unclear"] | None  # verifier only
     url: str | None      # verifier citation
+    claim_id: str | None # id of the blog-post paragraph this comment anchors to
 
-class PipelineResult(BaseModel):
-    answer: str                   # synthesized artifact — final answer OR blog post body
-    comments: list[AgentComment]  # all agent contributions — the "comments"
+class PipelineResult(BaseModel):                 # run_pipeline() + /ask (eval path)
+    answer: str                   # synthesized final answer
+    comments: list[AgentComment]
     confidence: float             # 0.0–1.0
     confidence_level: Literal["high", "medium", "low"]
-    title: str | None = None      # set when the artifact is a blog post
+    title: str | None = None
+
+# Structured blog-post result — convert_to_blog_post() + /convert (the React workspace)
+class Paragraph(BaseModel):
+    id: str                                          # "p1", "p2", … — comments anchor here
+    status: Literal["verified", "disputed", "hallucination", "neutral"]  # from verdicts
+    text: str
+
+class BlogPost(BaseModel):
+    title: str
+    paragraphs: list[Paragraph]
+
+class BlogPostResult(BaseModel):
+    answer: BlogPost
+    comments: list[AgentComment]  # each anchored to a paragraph via claim_id
+    confidence: float
+    confidence_level: Literal["high", "medium", "low"]
 ```
 
-`convert_to_blog_post` and `run_pipeline` both return a `PipelineResult` (the conversion sets
-`.title`). `chat` and `reply_to_comment` return plain reply strings for the tutoring phase.
-The Streamlit UI renders the conversation as a chat thread and the converted result as a blog post +
-comment thread. The Fetch.ai handler returns only `.answer` (plain text for ASI:One chat).
+`run_pipeline` returns `PipelineResult`; `convert_to_blog_post` returns `BlogPostResult` (paragraphs
+with per-paragraph trust status + comments anchored via `claim_id`). `chat` and `reply_to_comment`
+return plain reply strings for the tutoring phase. The **React SPA** (`web/`) is the primary UI: it
+renders the conversation as a chat thread and the converted result as a color-coded blog post +
+reviewer sidebar. The Fetch.ai handler returns only `.answer` (plain text for ASI:One chat).
 
 ## Stack (verified June 2026 — confirm exact API surfaces against the linked docs before coding)
 
 - **Language/runtime:** Python 3.11+, `asyncio`.
 - **Backend:** FastAPI.
-- **Frontend:** Streamlit (default, fastest path). A React app is optional and only worth it for the
-  Best UI/UX prize — don't start there. (For the Fetch.ai track, ASI:One chat *is* the frontend.)
+- **Frontend:** **React SPA in `web/`** (default) — Vite 6 + React 18 + Tailwind v4 + Lucide, a
+  Gemini-style 4-state flow (home → chat → loading → workspace) that calls the FastAPI backend over
+  `fetch` (`/api` proxied to `:8000`). Streamlit (`ui/streamlit_app.py`) is kept as a minimal fallback.
+  (For the Fetch.ai track, ASI:One chat *is* the frontend.)
 - **Model:** Claude via the Anthropic API. Build the whole thing **with Claude Code** (required for
   the Anthropic prize).
 - **Grounding:** Stagehand Python SDK (`stagehand-py`) on Browserbase cloud browsers.
@@ -239,8 +260,16 @@ eval/
     qa_smoke.jsonl      ✅ 5-question smoke set
   generate.py           ✅ batch-generate pipeline answers -> result files
   experiment.py         ✅ baseline (single Sonnet call) vs full pipeline; Haiku judges
+web/                    ✅ React SPA (PRIMARY UI) — Vite 6 + React 18 + Tailwind v4 + Lucide
+  src/
+    App.tsx             ✅ 4-state machine (home/chat/loading/workspace) + all views/components
+    api.ts              ✅ typed fetch client → /chat /convert /reply (types mirror app/models.py)
+    styles.css          ✅ Tailwind v4 @theme tokens (OKLCH); status + persona colors, animations
+    main.tsx            ✅ React root
+  vite.config.ts        ✅ react + tailwind plugins; proxies /api → :8000
+  index.html · package.json · tsconfig.json · README.md
 ui/
-  streamlit_app.py      ✅ two-phase: chat thread + "Convert to verifiable blog post" → reviewed post
+  streamlit_app.py      ✅ minimal fallback UI: chat thread + convert → reviewed post
 .env.example            ✅
 requirements.txt        ✅
 README.md               ✅ (judging writeup — keep current)
@@ -347,10 +376,11 @@ if __name__ == "__main__":
 - **Phase 4 — Proof.** ✅ DONE (harness built; run the milestone experiments to capture numbers).
   Eval harness: batch-generate answers once, run the baseline-vs-pipeline **experiment**.
   **This number is what wins the room.**
-- **Phase 5 — Education polish.** ← CURRENT. Blog-post-comments UI is in place (post + comment cards
-  with role badge, claim, verdict/citation). Still to add: a reply box under each comment that calls
-  `reply_to_comment(comment, followup, messages)` (returns a tutor reply that continues the
-  conversation), teacher modes (quiz, Socratic), and richer confidence shading.
+- **Phase 5 — Education polish.** ← CURRENT (mostly done). React SPA (`web/`) ships the full
+  blog-post-comments UX: Gemini-style chat → convert → workspace with color-coded paragraphs
+  (verified/disputed/hallucination, anchored via `claim_id`), a reviewer sidebar, per-card reply
+  boxes wired to `/reply`, upvotes, and a trust-score badge. **Still to add:** teacher modes
+  (quiz, Socratic) and any richer confidence shading beyond the paragraph colors.
 - **Phase 6 — Fetch.ai exposure (optional, last, 2–3h time-box).** Wrap `run_pipeline` as the
   Chat-Protocol uAgent in `app/agent.py`, run it as a **Mailbox agent**, register on Agentverse, and
   confirm a full **ASI:One round-trip** (type a question in ASI:One → agent answers). See the Fetch.ai
@@ -396,8 +426,8 @@ web access, Arize proves the gain, Fetch.ai is the discoverable entry point. Non
 ## Definition of done (demo checklist)
 
 - [x] Study with the tutor (no checking) → click "Convert to verifiable blog post" → reviewed post with confidence shading + system-found citations. *(`chat()` + `convert_to_blog_post()` done)*
-- [x] Result is presented as a blog post; agent contributions appear as comment cards. *(Streamlit done; reply boxes pending — Phase 5)*
-- [ ] Reply to any agent comment → follow-up generated with that agent's context. *(`reply_to_comment()` done; needs reply-box wiring in the UI — Phase 5)*
+- [x] Result is presented as a blog post; agent contributions appear as comment cards. *(React workspace: color-coded paragraphs + reviewer sidebar)*
+- [x] Reply to any agent comment → follow-up generated with that agent's context. *(reply box on each AgentCard → `/reply`; tutor reply renders inline)*
 - [ ] One Phoenix experiment slide: single-model baseline vs full pipeline, factuality delta. *(harness done; run the experiment to capture the number)*
 - [ ] At least one teacher mode beyond plain explain (quiz or Socratic). *(Phase 5)*
 - [x] README exists. *(needs accuracy-gain framing once eval numbers are in)*

@@ -50,13 +50,14 @@ if result:
     confidence_emoji = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(
         result.confidence_level, "⚪"
     )
-    if result.title:
-        st.header(result.title)
+    st.header(result.answer.title)
     st.markdown(
         f"{confidence_emoji} **{result.confidence_level.capitalize()} confidence** "
         f"({result.confidence:.0%})"
     )
-    st.markdown(result.answer)
+    status_emoji = {"verified": "🟢", "disputed": "🟡", "hallucination": "🔴", "neutral": "⚪"}
+    for p in result.answer.paragraphs:
+        st.markdown(f"{status_emoji.get(p.status, '⚪')} {p.text}")
 
     if result.comments:
         st.subheader(f"Agent review ({len(result.comments)} comments)")

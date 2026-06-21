@@ -16,6 +16,7 @@ class AgentComment(BaseModel):
     claim: str | None = None
     verdict: Literal["supports", "refutes", "unclear"] | None = None
     url: str | None = None
+    claim_id: str | None = None     # id of the blog-post paragraph this comment anchors to
 
 
 class PipelineResult(BaseModel):
@@ -24,3 +25,26 @@ class PipelineResult(BaseModel):
     confidence: float
     confidence_level: Literal["high", "medium", "low"]
     title: str | None = None        # set when the artifact is a blog post
+
+
+# ── Structured blog-post result (the React workspace renders this) ───────────────
+
+ParagraphStatus = Literal["verified", "disputed", "hallucination", "neutral"]
+
+
+class Paragraph(BaseModel):
+    id: str                         # stable id, e.g. "p1" — comments anchor here via claim_id
+    status: ParagraphStatus         # derived from the critic/verifier verdicts on this paragraph
+    text: str
+
+
+class BlogPost(BaseModel):
+    title: str
+    paragraphs: list[Paragraph]
+
+
+class BlogPostResult(BaseModel):
+    answer: BlogPost
+    comments: list[AgentComment]    # each anchored to a paragraph via claim_id
+    confidence: float
+    confidence_level: Literal["high", "medium", "low"]
