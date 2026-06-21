@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 
 import anthropic
 from dotenv import load_dotenv
@@ -29,6 +30,14 @@ _ROLES = [
     ),
 ]
 
+def _strip_fences(text: str) -> str:
+    """Remove markdown code fences that models add around JSON responses."""
+    text = text.strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    return text.strip()
+
+
 _DECOMPOSE_SYSTEM = (
     "Extract the key factual claims from an AI-generated educational answer. "
     "Return a JSON array of strings — each string is one specific, verifiable factual claim. "
@@ -45,7 +54,7 @@ async def _decompose(draft: str, question: str) -> list[str]:
         messages=[{"role": "user", "content": f"Question: {question}\n\nAnswer:\n{draft}"}],
     )
     try:
-        return json.loads(response.content[0].text)[:5]
+        return json.loads(_strip_fences(response.content[0].text))[:5]
     except Exception:
         return []
 
@@ -64,7 +73,7 @@ async def _critique_one(claim: str, role: str, role_desc: str) -> AgentComment:
         messages=[{"role": "user", "content": f"Claim: {claim}"}],
     )
     try:
-        data = json.loads(response.content[0].text)
+        data = json.loads(_strip_fences(response.content[0].text))
         verdict = data.get("verdict", "unclear")
         if verdict not in ("supports", "refutes", "unclear"):
             verdict = "unclear"
