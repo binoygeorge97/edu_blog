@@ -92,10 +92,9 @@ perspective, and can later re-convert the enriched conversation into an updated 
 | `app/confidence.py` | ✅ Done | Multi-sample semantic-disagreement scoring |
 | `eval/` | ✅ Done | datasets (qa_30, qa_smoke), generate.py (Batch API), experiment.py |
 | `ui/streamlit_app.py` | ✅ Done | Two-phase: chat thread + "Convert to verifiable blog post" → reviewed post |
-| `app/agent.py` | ❌ Phase 6 | Fetch.ai uAgent wrapper (optional) |
+| `app/agent.py` | ✅ Done | Fetch.ai uAgent Chat Protocol wrapper (returns result.answer) |
 
-**Currently on:** Phase 5 (education polish — teacher modes, confidence shading, reply boxes) /
-optional Phase 6 (Fetch.ai). Core accuracy engine + eval harness are done.
+**Currently on:** Phase 6 complete. All phases done.
 
 ### Blog-post-comments data model
 
