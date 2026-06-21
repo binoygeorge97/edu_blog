@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Sparkles,
   ShieldCheck,
@@ -28,6 +29,7 @@ function Prose({ children, className = "" }: { children: string; className?: str
   return (
     <ReactMarkdown
       className={`prose-sourcerer ${className}`}
+      remarkPlugins={[remarkGfm]}
       components={{
         p: ({ children }) => <p className="mb-2 last:mb-0 leading-[1.75]">{children}</p>,
         strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
@@ -41,6 +43,10 @@ function Prose({ children, className = "" }: { children: string; className?: str
         code: ({ children }) => <code className="rounded bg-surface-raised px-1 py-0.5 font-mono text-[13px] text-gold-dim">{children}</code>,
         hr: () => <hr className="my-3 border-border" />,
         blockquote: ({ children }) => <blockquote className="border-l-2 border-gold/40 pl-3 italic text-muted">{children}</blockquote>,
+        table: ({ children }) => <div className="my-2 overflow-x-auto"><table className="w-full border-collapse text-[13px]">{children}</table></div>,
+        thead: ({ children }) => <thead className="border-b border-border">{children}</thead>,
+        th: ({ children }) => <th className="px-3 py-1.5 text-left font-semibold text-gold-dim">{children}</th>,
+        td: ({ children }) => <td className="border-t border-border/50 px-3 py-1.5">{children}</td>,
       }}
     >
       {children}
