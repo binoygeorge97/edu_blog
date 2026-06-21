@@ -1,10 +1,19 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.pipeline import run_pipeline, reply_to_comment, chat, convert_to_blog_post
-from app.models import AgentComment, ChatTurn, PipelineResult
+from app.models import AgentComment, BlogPostResult, ChatTurn, PipelineResult
 
 app = FastAPI(title="Sourcerer", description="AI tutor with verified answers")
+
+# Allow the Vite dev server (and other local origins) to call the API directly.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class AskRequest(BaseModel):
@@ -39,8 +48,8 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
     return ChatResponse(reply=await chat(request.messages))
 
 
-@app.post("/convert", response_model=PipelineResult)
-async def convert(request: ConvertRequest) -> PipelineResult:
+@app.post("/convert", response_model=BlogPostResult)
+async def convert(request: ConvertRequest) -> BlogPostResult:
     """Conversion phase: turn the conversation into a reviewed blog post."""
     return await convert_to_blog_post(request.messages)
 

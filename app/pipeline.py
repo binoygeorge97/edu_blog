@@ -5,11 +5,19 @@ from opentelemetry import trace
 from app.agents.generator import generate
 from app.agents.tutor import tutor_reply
 from app.agents.blogger import write_post
-from app.agents.critics import critique
+from app.agents.critics import critique, critique_post
 from app.agents.verifier import verify
 from app.agents.teacher import teach
 from app.confidence import compute_confidence
-from app.models import AgentComment, ChatTurn, PipelineResult
+from app.models import (
+    AgentComment,
+    BlogPost,
+    BlogPostResult,
+    ChatTurn,
+    Paragraph,
+    ParagraphStatus,
+    PipelineResult,
+)
 
 _tracer = trace.get_tracer("sourcerer.pipeline")
 
@@ -38,26 +46,53 @@ async def chat(messages: list[ChatTurn]) -> str:
 
 # ── Conversion phase: turn the conversation into a reviewed blog post ─────────────
 
-async def convert_to_blog_post(messages: list[ChatTurn]) -> PipelineResult:
+def _paragraph_status(comments: list[AgentComment]) -> ParagraphStatus:
+    """Derive a paragraph's trust status from the comments anchored to it."""
+    if not comments:
+        return "neutral"
+    # A verifier finding web evidence that refutes the claim is the strongest negative.
+    if any(c.agent == "verifier" and c.verdict == "refutes" for c in comments):
+        return "hallucination"
+    # Any critic refutation or unresolved verdict makes the paragraph disputed.
+    if any(c.verdict in ("refutes", "unclear") for c in comments):
+        return "disputed"
+    if any(c.verdict == "supports" for c in comments):
+        return "verified"
+    return "neutral"
+
+
+async def convert_to_blog_post(messages: list[ChatTurn]) -> BlogPostResult:
     """Synthesize the conversation into a blog post, THEN deploy critics + verifier on it."""
     with _tracer.start_as_current_span("blogpost.convert") as span:
         span.set_attribute("turns", len(messages))
 
-        title, post = await write_post(messages)
-        span.set_attribute("post.length", len(post))
+        title, para_texts = await write_post(messages)
+        paragraphs = [{"id": f"p{i + 1}", "text": t} for i, t in enumerate(para_texts)]
+        span.set_attribute("paragraph.count", len(paragraphs))
 
         # Topic context for claim decomposition = what the learner actually asked about.
         topic = "\n".join(m.content for m in messages if m.role == "user")[:1000]
 
-        critic_comments, verifier_comments, confidence, confidence_level = await _review(post, topic)
+        critic_comments = await critique_post(paragraphs, topic)
+        verifier_comments = await verify(critic_comments)
+        confidence, confidence_level = await compute_confidence(critic_comments, verifier_comments)
         span.set_attribute("critic.count", len(critic_comments))
         span.set_attribute("verifier.count", len(verifier_comments))
         span.set_attribute("confidence", confidence)
 
-    return PipelineResult(
-        answer=post,
-        title=title,
-        comments=[*critic_comments, *verifier_comments],
+        all_comments = [*critic_comments, *verifier_comments]
+        para_objs = [
+            Paragraph(
+                id=p["id"],
+                text=p["text"],
+                status=_paragraph_status([c for c in all_comments if c.claim_id == p["id"]]),
+            )
+            for p in paragraphs
+        ]
+
+    return BlogPostResult(
+        answer=BlogPost(title=title, paragraphs=para_objs),
+        comments=all_comments,
         confidence=confidence,
         confidence_level=confidence_level,
     )
@@ -109,7 +144,7 @@ async def reply_to_comment(
         f"Their note: {comment.content[:500]}"
         + (f" Regarding the claim: '{comment.claim}'." if comment.claim else "")
         + (f" Cited source: {comment.url}." if comment.url else "")
-        + "]"
+        + " Answer concisely in 2-3 sentences, directly addressing the follow-up — no preamble.]"
     )
     convo = list(messages or [])
     convo.append(ChatTurn(role="user", content=context))

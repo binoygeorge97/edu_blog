@@ -59,7 +59,9 @@ async def _decompose(draft: str, question: str) -> list[str]:
         return []
 
 
-async def _critique_one(claim: str, role: str, role_desc: str) -> AgentComment:
+async def _critique_one(
+    claim: str, role: str, role_desc: str, claim_id: str | None = None
+) -> AgentComment:
     system = (
         f"You are a {role} reviewing claims in an AI-generated educational answer. "
         f"{role_desc}\n\n"
@@ -88,6 +90,7 @@ async def _critique_one(claim: str, role: str, role_desc: str) -> AgentComment:
         content=explanation,
         claim=claim,
         verdict=verdict,
+        claim_id=claim_id,
     )
 
 
@@ -99,5 +102,51 @@ async def critique(draft: str, question: str) -> list[AgentComment]:
     tasks = [
         _critique_one(claim, *_ROLES[i % len(_ROLES)])
         for i, claim in enumerate(claims)
+    ]
+    return list(await asyncio.gather(*tasks))
+
+
+# ── Paragraph-anchored decomposition (blog-post review path) ─────────────────────
+
+_DECOMPOSE_POST_SYSTEM = (
+    "Extract the key factual claims from a blog-style study post supplied as numbered paragraphs. "
+    "Return a JSON array of objects, each {\"claim\": \"<one verifiable factual claim>\", "
+    "\"paragraph_id\": \"<the id of the paragraph it comes from>\"}. "
+    "Maximum 5 claims, focusing on the most important and fact-checkable statements. "
+    "Use only paragraph ids that appear in the input. Return only the JSON array, no other text."
+)
+
+
+async def _decompose_post(paragraphs: list[dict]) -> list[dict]:
+    """paragraphs: [{"id": "p1", "text": "..."}] → [{"claim": str, "paragraph_id": str}]."""
+    valid_ids = {p["id"] for p in paragraphs}
+    numbered = "\n\n".join(f'[{p["id"]}] {p["text"]}' for p in paragraphs)
+    response = await _client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=768,
+        system=[{"type": "text", "text": _DECOMPOSE_POST_SYSTEM, "cache_control": {"type": "ephemeral"}}],
+        messages=[{"role": "user", "content": numbered}],
+    )
+    try:
+        items = json.loads(_strip_fences(response.content[0].text))[:5]
+    except Exception:
+        return []
+    out = []
+    for it in items:
+        claim = (it.get("claim") or "").strip()
+        pid = it.get("paragraph_id")
+        if claim and pid in valid_ids:
+            out.append({"claim": claim, "paragraph_id": pid})
+    return out
+
+
+async def critique_post(paragraphs: list[dict], question: str) -> list[AgentComment]:
+    """Decompose a structured post into claims anchored to paragraphs, red-team each in parallel."""
+    claims = await _decompose_post(paragraphs)
+    if not claims:
+        return []
+    tasks = [
+        _critique_one(c["claim"], *_ROLES[i % len(_ROLES)], claim_id=c["paragraph_id"])
+        for i, c in enumerate(claims)
     ]
     return list(await asyncio.gather(*tasks))

@@ -50,9 +50,11 @@ async def main() -> None:
     # ── Phase 2: convert → review ───────────────────────────────────────────────
     rule("PHASE 2 — Convert to verifiable blog post (critics + verifier deploy NOW)")
     result = await convert_to_blog_post(messages)
-    print(f"\nTitle: {result.title}")
+    print(f"\nTitle: {result.answer.title}")
     print(f"Confidence: {result.confidence:.0%} ({result.confidence_level})")
-    print(f"\n--- POST ---\n{result.answer}")
+    print("\n--- POST ---")
+    for p in result.answer.paragraphs:
+        print(f"\n[{p.id} · {p.status}] {p.text}")
     print(f"\n--- {len(result.comments)} AGENT COMMENTS ---")
     for c in result.comments:
         verdict = f" [{c.verdict}]" if c.verdict else ""

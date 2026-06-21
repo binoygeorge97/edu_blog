@@ -32,6 +32,7 @@ async def _verify_one(critic_comment: AgentComment) -> AgentComment:
             claim=critic_comment.claim,
             verdict="unclear",
             url=None,
+            claim_id=critic_comment.claim_id,
         )
     return AgentComment(
         agent="verifier",
@@ -40,4 +41,5 @@ async def _verify_one(critic_comment: AgentComment) -> AgentComment:
         claim=critic_comment.claim,
         verdict=evidence.verdict,
         url=evidence.url,
+        claim_id=critic_comment.claim_id,
     )

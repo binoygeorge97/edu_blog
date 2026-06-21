@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+/* Tailwind v4 design tokens (OKLCH). Defining --color-* here generates the
+   matching bg-/text-/border- utilities (e.g. border-verified, bg-disputed/10). */
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --color-background: oklch(0.985 0 0); /* zinc-50-ish clean surface */
+  --color-foreground: oklch(0.21 0.006 285);
+  --color-muted: oklch(0.55 0.01 285);
+  --color-border: oklch(0.92 0.004 286);
+
+  /* Trust status */
+  --color-verified: oklch(0.68 0.14 165); /* mint */
+  --color-disputed: oklch(0.78 0.16 75); /* amber */
+  --color-hallucination: oklch(0.65 0.22 18); /* rose */
+
+  /* Persona accents */
+  --color-skeptic: oklch(0.64 0.16 40); /* terracotta */
+  --color-factcheck: oklch(0.6 0.16 255); /* blue */
+  --color-beginner: oklch(0.68 0.15 150); /* green */
+  --color-explainer: oklch(0.58 0.18 300); /* purple */
+  --color-defender: oklch(0.55 0.18 275); /* indigo */
+  --color-consensus: oklch(0.8 0.15 95); /* yellow */
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Shimmer used by the loading status text */
+@keyframes shimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--color-muted) 0%,
+    var(--color-foreground) 50%,
+    var(--color-muted) 100%
+  );
+  background-size: 200% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 2s linear infinite;
+}
+
+/* Lightweight enter animation (mimics animate-in fade-in) */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fade-in 0.5s ease both;
+}
