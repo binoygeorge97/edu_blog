@@ -7,10 +7,10 @@ from app.models import AgentComment, BlogPostResult, ChatTurn, PipelineResult
 
 app = FastAPI(title="Sourcerer", description="AI tutor with verified answers")
 
-# Allow the Vite dev server (and other local origins) to call the API directly.
+# Allow local dev (Vite) and any Vercel deployment.
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?|https://.*\.vercel\.app",
     allow_methods=["*"],
     allow_headers=["*"],
 )
