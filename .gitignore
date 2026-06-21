@@ -42,3 +42,7 @@ phoenix_data/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Eval run artifacts (regenerated locally)
+eval/datasets/results_*.jsonl
+Sourcerer.html

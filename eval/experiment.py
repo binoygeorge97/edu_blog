@@ -19,13 +19,13 @@ import json
 import os
 import sys
 
-import anthropic
 from dotenv import load_dotenv
+load_dotenv()  # must run before app.telemetry so PHOENIX_* vars are present at register() time
+
+import anthropic
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import app.telemetry  # noqa: F401 — Phoenix auto-traces all Haiku judge calls
-
-load_dotenv()
 
 DATASETS_DIR = os.path.join(os.path.dirname(__file__), "datasets")
 
