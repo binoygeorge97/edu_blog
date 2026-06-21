@@ -7,3 +7,4 @@ opentelemetry-sdk>=1.24.0
 opentelemetry-exporter-otlp>=1.24.0
 stagehand-py>=0.1.0
 python-dotenv>=1.0.0
+uagents>=0.25.0

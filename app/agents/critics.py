@@ -64,7 +64,7 @@ async def _critique_one(claim: str, role: str, role_desc: str) -> AgentComment:
         f"You are a {role} reviewing claims in an AI-generated educational answer. "
         f"{role_desc}\n\n"
         "Evaluate the given claim and respond with JSON only:\n"
-        '{"verdict": "supports"|"refutes"|"unclear", "explanation": "<1-2 sentences>"}'
+        '{"verdict": "supports"|"refutes"|"unclear", "explanation": "<max 2 short sentences, under 30 words total>"}'
     )
     response = await _client.messages.create(
         model="claude-haiku-4-5-20251001",

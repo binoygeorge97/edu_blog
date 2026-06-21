@@ -1,11 +1,16 @@
+import json
 import os
 import urllib.parse
 from typing import Literal
 
+import anthropic
+import httpx
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_claude = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 
 class Evidence(BaseModel):
@@ -15,37 +20,74 @@ class Evidence(BaseModel):
 
 
 async def fetch_evidence(claim: str) -> Evidence | None:
-    """Search for web evidence about a claim via Browserbase/Stagehand.
-
-    Returns None if Browserbase credentials are absent or the session fails.
-    """
+    """Search DuckDuckGo via Browserbase, then ask Claude to extract evidence."""
     bb_key = os.getenv("BROWSERBASE_API_KEY")
     bb_project = os.getenv("BROWSERBASE_PROJECT_ID")
-    model_key = os.getenv("MODEL_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
 
     if not bb_key or not bb_project:
         return None
 
     try:
-        from stagehand import Stagehand, StagehandConfig  # deferred: optional dep
-
         query = urllib.parse.quote_plus(claim[:200])
-        cfg = StagehandConfig(
-            env="BROWSERBASE",
-            browserbase_api_key=bb_key,
-            browserbase_project_id=bb_project,
-            model_api_key=model_key,
-        )
-        async with Stagehand(cfg) as s:
-            await s.page.goto(f"https://duckduckgo.com/?q={query}&ia=web")
-            result: Evidence = await s.page.extract(
-                f"Based on these search results, does the following claim appear to be "
-                f"true, false, or unclear? Claim: '{claim}'. "
-                f"Return a verdict (supports/refutes/unclear), a short direct quote from "
-                f"a search result that justifies your verdict, and the URL of the most "
-                f"relevant result.",
-                schema=Evidence,
-            )
-            return result
+        page_text = await _fetch_search_page(bb_key, bb_project, query)
+        if not page_text:
+            return None
+        return await _extract_with_claude(claim, page_text)
     except Exception:
         return None
+
+
+async def _fetch_search_page(
+    bb_key: str, bb_project: str, query: str
+) -> str | None:
+    """Create a Browserbase session, navigate to DuckDuckGo, return page text."""
+    from browserbase import Browserbase
+    from playwright.async_api import async_playwright
+
+    bb = Browserbase(api_key=bb_key)
+    session = bb.sessions.create(project_id=bb_project)
+    connect_url = session.connect_url
+
+    try:
+        async with async_playwright() as pw:
+            browser = await pw.chromium.connect_over_cdp(connect_url)
+            context = browser.contexts[0]
+            page = context.pages[0] if context.pages else await context.new_page()
+            await page.goto(
+                f"https://duckduckgo.com/?q={query}&ia=web",
+                wait_until="domcontentloaded",
+            )
+            await page.wait_for_timeout(2000)
+            text = await page.inner_text("body")
+            await browser.close()
+    finally:
+        bb.sessions.update(session.id, status="REQUEST_RELEASE")
+
+    return text[:4000]
+
+
+async def _extract_with_claude(claim: str, page_text: str) -> Evidence | None:
+    """Ask Claude to extract a verdict from search results text."""
+    response = await _claude.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=256,
+        system=[{
+            "type": "text",
+            "text": (
+                "You evaluate whether search results support or refute a claim. "
+                "Respond with JSON only: "
+                '{"verdict": "supports"|"refutes"|"unclear", '
+                '"quote": "<short relevant quote from results>", '
+                '"url": "<most relevant URL from results>"}'
+            ),
+            "cache_control": {"type": "ephemeral"},
+        }],
+        messages=[{
+            "role": "user",
+            "content": f"Claim: {claim}\n\nSearch results:\n{page_text}",
+        }],
+    )
+    raw = response.content[0].text.strip()
+    raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    data = json.loads(raw)
+    return Evidence(**data)

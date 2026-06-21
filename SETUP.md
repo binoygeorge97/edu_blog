@@ -141,7 +141,44 @@ Without Browserbase the pipeline works fine — critics flag suspicious claims b
 | Streamlit UI | ✅ Running (minimal — shows answer only) |
 | Eval harness (generate + experiment scripts) | ✅ Ready to run |
 | Blog-post + comment thread UI | ⏳ Phase 5 |
-| Fetch.ai uAgent wrapper | ⏳ Phase 6 |
+| Fetch.ai uAgent wrapper | ✅ Running |
+
+---
+
+## Step 6 — Run the Fetch.ai Agent (Phase 6)
+
+The Sourcerer pipeline can also run as a Fetch.ai Chat Protocol agent, discoverable on ASI:One.
+
+1. Re-install deps (adds `uagents`):
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. Set `AGENT_SEED` in `.env` to any stable passphrase (keeps the agent address constant across restarts):
+   ```
+   AGENT_SEED=my-sourcerer-hackathon-seed
+   ```
+
+3. Start Phoenix (Terminal 1, if not already running):
+   ```bash
+   python3 -c "import phoenix as px; px.launch_app()"
+   ```
+
+4. Start the agent (Terminal 2):
+   ```bash
+   python3 app/agent.py
+   ```
+   The agent runs on port 8001 (separate from the FastAPI server on 8000). Note the agent address printed at startup.
+
+5. Connect to Agentverse:
+   - Go to [agentverse.ai](https://agentverse.ai) and log in
+   - Use the "Connect Local Agent" flow with the agent address from step 4
+   - Verify the agent appears on your dashboard with the Chat Protocol manifest
+
+6. Test via ASI:One:
+   - Go to [asi.one](https://asi.one)
+   - Find the Sourcerer agent
+   - Send a factual question — you should get a verified answer within 60 seconds
 
 ---
 
@@ -155,6 +192,7 @@ Without Browserbase the pipeline works fine — critics flag suspicious claims b
 | Generate smoke answers | `python3 eval/generate.py --dataset smoke --mode both` |
 | Score smoke answers | `python3 eval/experiment.py --dataset smoke` |
 | Regenerate (if pipeline changed) | add `--force` to generate.py |
+| Fetch.ai agent | `python3 app/agent.py` (port 8001) |
 
 ---
 
