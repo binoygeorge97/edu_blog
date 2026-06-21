@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import urllib.parse
@@ -29,10 +30,15 @@ async def fetch_evidence(claim: str) -> Evidence | None:
 
     try:
         query = urllib.parse.quote_plus(claim[:200])
-        page_text = await _fetch_search_page(bb_key, bb_project, query)
+        # Hard cap: each evidence fetch must complete within 20 s or we skip it.
+        page_text = await asyncio.wait_for(
+            _fetch_search_page(bb_key, bb_project, query), timeout=20
+        )
         if not page_text:
             return None
-        return await _extract_with_claude(claim, page_text)
+        return await asyncio.wait_for(
+            _extract_with_claude(claim, page_text), timeout=15
+        )
     except Exception:
         return None
 
