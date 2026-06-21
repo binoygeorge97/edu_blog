@@ -74,15 +74,23 @@ async def _critique_one(
         system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": f"Claim: {claim}"}],
     )
+    raw = response.content[0].text
+    data: dict = {}
     try:
-        data = json.loads(_strip_fences(response.content[0].text))
-        verdict = data.get("verdict", "unclear")
-        if verdict not in ("supports", "refutes", "unclear"):
-            verdict = "unclear"
-        explanation = data.get("explanation", "")
+        data = json.loads(_strip_fences(raw))
     except Exception:
+        # Model sometimes adds text before/after the JSON — extract the first {...} block
+        m = re.search(r'\{[^{}]*\}', raw, re.DOTALL)
+        if m:
+            try:
+                data = json.loads(m.group())
+            except Exception:
+                pass
+
+    verdict = data.get("verdict", "unclear")
+    if verdict not in ("supports", "refutes", "unclear"):
         verdict = "unclear"
-        explanation = response.content[0].text[:300]
+    explanation = data.get("explanation") or raw.split("{")[0].strip() or raw[:300]
 
     return AgentComment(
         agent="critic",
